@@ -471,7 +471,76 @@ bool PN532::readPassiveTargetID(uint8_t cardbaudrate, uint8_t *uid, uint8_t *uid
     return 1;
 }
 
+/**************************************************************************/
+/*!
+    Waits for an ISO14443A target to enter the field
 
+    @param  cardBaudRate  Baud rate of the card
+    @param  uid           Pointer to the array that will be populated
+                          with the card's UID (up to 7 bytes)
+    @param  uidLength     Pointer to the variable that will hold the
+                          length of the card's UID.
+    @param  atqa          Pointer to the variable that will hold the
+                          ATQA of the card
+    @param  sak           Pointer to the variable that will hold the
+                          SAK of the card
+    @param  timeout       The number of tries before timing out
+    @param  inlist        If set to true, the card will be inlisted
+    @returns 1 if everything executed properly, 0 for an error
+*/
+/**************************************************************************/
+bool PN532::readPassiveTargetID(uint8_t cardbaudrate, uint8_t *uid, uint8_t *uidLength, uint16_t *atqa, uint8_t *sak, uint16_t timeout, bool inlist)
+{
+    pn532_packetbuffer[0] = PN532_COMMAND_INLISTPASSIVETARGET;
+    pn532_packetbuffer[1] = 1;  // max 1 cards at once (we can set this to 2 later)
+    pn532_packetbuffer[2] = cardbaudrate;
+
+    if (HAL(writeCommand)(pn532_packetbuffer, 3)) {
+        return 0x0;  // command failed
+    }
+
+    // read data packet
+    if (HAL(readResponse)(pn532_packetbuffer, sizeof(pn532_packetbuffer), timeout) < 0) {
+        return 0x0;
+    }
+
+    // check some basic stuff
+    /* ISO14443A card response should be in the following format:
+
+      byte            Description
+      -------------   ------------------------------------------
+      b0              Tags Found
+      b1              Tag Number (only one used in this example)
+      b2..3           SENS_RES
+      b4              SEL_RES
+      b5              NFCID Length
+      b6..NFCIDLen    NFCID
+    */
+
+    if (pn532_packetbuffer[0] != 1)
+        return 0;
+
+    *atqa = pn532_packetbuffer[2];
+    *atqa <<= 8;
+    *atqa |= pn532_packetbuffer[3];
+    *sak = pn532_packetbuffer[4];
+    DMSG("ATQA: 0x");  DMSG_HEX(*atqa);
+    DMSG("SAK: 0x");  DMSG_HEX(pn532_packetbuffer[4]);
+    DMSG("\n");
+
+    /* Card appears to be Mifare Classic */
+    *uidLength = pn532_packetbuffer[5];
+
+    for (uint8_t i = 0; i < pn532_packetbuffer[5]; i++) {
+        uid[i] = pn532_packetbuffer[6 + i];
+    }
+
+    if (inlist) {
+        inListedTag = pn532_packetbuffer[1];
+    }
+
+    return 1;
+}
 /***** Mifare Classic Functions ******/
 
 /**************************************************************************/
